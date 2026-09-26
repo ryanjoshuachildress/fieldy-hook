@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>fieldy-hook</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --panel2: #1e222b; --border: #2a2f3a;
+    --text: #e6e9ef; --muted: #8b93a3; --accent: #5b9dff; --accent2: #7ee2a8;
+    --danger: #ff6b6b; --mono: ui-monospace, "Cascadia Code", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 system-ui, sans-serif; }
+  header { display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid var(--border); background: var(--panel); position: sticky; top: 0; z-index: 5; }
+  header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+  header .token-state { font-size: 12px; color: var(--muted); cursor: pointer; }
+  header .token-state.ok { color: var(--accent2); }
+  main { display: flex; height: calc(100vh - 53px); }
+  #sidebar { width: 420px; min-width: 320px; border-right: 1px solid var(--border); display: flex; flex-direction: column; }
+  #filters { padding: 12px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; }
+  #filters .row { display: flex; gap: 8px; }
+  input, select, textarea, button { background: var(--panel2); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 7px 10px; font: inherit; }
+  input:focus, select:focus, textarea:focus { outline: 1px solid var(--accent); }
+  input[type="date"] { color-scheme: dark; }
+  button { cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: #0b1220; font-weight: 600; border-color: transparent; }
+  button.danger { color: var(--danger); }
+  button.ghost { background: transparent; }
+  #results { flex: 1; overflow-y: auto; }
+  .event { padding: 10px 14px; border-bottom: 1px solid var(--border); cursor: pointer; }
+  .event:hover, .event.selected { background: var(--panel2); }
+  .event .meta { font-size: 11px; color: var(--muted); display: flex; gap: 8px; flex-wrap: wrap; }
+  .event .text { margin-top: 3px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  #pager { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-top: 1px solid var(--border); color: var(--muted); font-size: 12px; }
+  #detail { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  #detail-tabs { display: flex; gap: 4px; padding: 10px 16px 0; border-bottom: 1px solid var(--border); }
+  #detail-tabs button { border-radius: 6px 6px 0 0; border-bottom: none; background: transparent; color: var(--muted); }
+  #detail-tabs button.active { color: var(--text); background: var(--panel2); }
+  #detail-body { flex: 1; overflow: auto; padding: 16px; }
+  #detail-body pre { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 12px; font-family: var(--mono); font-size: 12px; white-space: pre-wrap; word-break: break-word; }
+  table.kv { border-collapse: collapse; font-size: 13px; }
+  table.kv td { border: 1px solid var(--border); padding: 5px 10px; }
+  table.kv td:first-child { color: var(--muted); font-family: var(--mono); }
+  .placeholder { color: var(--muted); text-align: center; margin-top: 20vh; }
+  #stats { display: flex; gap: 16px; font-size: 12px; color: var(--muted); }
+  #stats b { color: var(--text); }
+  .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: none; align-items: center; justify-content: center; z-index: 20; }
+  .modal-backdrop.open { display: flex; }
+  .modal { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; width: min(720px, 92vw); max-height: 88vh; display: flex; flex-direction: column; }
+  .modal .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+  .modal .modal-body { padding: 16px; overflow: auto; display: flex; flex-direction: column; gap: 10px; }
+  .modal textarea { font-family: var(--mono); font-size: 12px; min-height: 160px; resize: vertical; }
+  .hint { font-size: 12px; color: var(--muted); }
+  .toolbar { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #export-bar { display: flex; gap: 6px; margin-left: auto; }
+  .flash { position: fixed; bottom: 18px; right: 18px; background: var(--panel2); border: 1px solid var(--border); border-left: 3px solid var(--accent); padding: 10px 16px; border-radius: 8px; display: none; z-index: 30; }
+</style>
+</head>
+<body>
+<header>
+  <h1>⌚ fieldy-hook</h1>
+  <div id="stats">…</div>
+  <span class="token-state" id="token-state" title="Click to change token">no token</span>
+</header>
+
+<main>
+  <div id="sidebar">
+    <div id="filters">
+      <div class="row">
+        <input id="f-q" placeholder="Full-text search…" style="flex:1">
+        <button class="primary" id="btn-search">Search</button>
+      </div>
+      <div class="row">
+        <input type="date" id="f-from" title="Received from">
+        <input type="date" id="f-to" title="Received to">
+        <input id="f-speaker" placeholder="Speaker" style="width:100px">
+        <input id="f-type" placeholder="Type" style="width:90px">
+      </div>
+      <div class="toolbar">
+        <select id="f-transform"><option value="">— transform —</option></select>
+        <button id="btn-transform-edit" title="Create/edit transforms">Edit…</button>
+        <button id="btn-transform-run" title="Run selected transform over current results">Run on results</button>
+        <div id="export-bar">
+          <button class="ghost" id="btn-export" data-fmt="json" title="Export current results as JSON">.json</button>
+          <button class="ghost" id="btn-export" data-fmt="jsonl" title="Export raw payloads as JSONL">.jsonl</button>
+          <button class="ghost" id="btn-export" data-fmt="csv" title="Export flattened CSV">.csv</button>
+        </div>
+      </div>
+    </div>
+    <div id="results"></div>
+    <div id="pager">
+      <button class="ghost" id="btn-prev">‹ Prev</button>
+      <span id="page-info"></span>
+      <button class="ghost" id="btn-next">Next ›</button>
+    </div>
+  </div>
+
+  <div id="detail">
+    <div id="detail-tabs">
+      <button data-tab="fields" class="active">Fields</button>
+      <button data-tab="raw">Raw JSON</button>
+      <button data-tab="transform">Transform preview</button>
+      <button class="danger" id="btn-delete" style="margin-left:auto" title="Delete this event">Delete</button>
+    </div>
+    <div id="detail-body"><div class="placeholder">Select an event</div></div>
+  </div>
+</main>
+
+<!-- transform editor -->
+<div class="modal-backdrop" id="modal-transform">
+  <div class="modal">
+    <div class="modal-head"><b>Transforms</b><button class="ghost" data-close>✕</button></div>
+    <div class="modal-body">
+      <div class="row" style="display:flex;gap:8px">
+        <select id="t-pick" style="flex:1"></select>
+        <button id="btn-t-new">New</button>
+        <button class="danger" id="btn-t-delete">Delete</button>
+      </div>
+      <input id="t-name" placeholder="name (letters, digits, -, _)">
+      <textarea id="t-code" spellcheck="false"></textarea>
+      <div class="hint">A JS function receiving <code>(event, raw)</code>. <code>event</code> holds the normalized fields
+        (id, received_at, event_date, transcript, speaker, event_type, conversation_id); <code>raw</code> is the parsed original payload. Example:
+        <code>(event, raw) =&gt; ({ day: event.event_date?.slice(0, 10), words: (event.transcript || '').split(/\s+/).length })</code></div>
+      <div class="row" style="display:flex;gap:8px;justify-content:flex-end">
+        <button id="btn-t-preview" class="ghost" title="Run on the currently selected event">Preview on selected</button>
+        <button id="btn-t-save" class="primary">Save</button>
+      </div>
+      <pre id="t-output" style="display:none"></pre>
+    </div>
+  </div>
+</div>
+
+<div class="flash" id="flash"></div>
+
+<script>
+const $ = (sel) => document.querySelector(sel);
+const $$ = (sel) => [...document.querySelectorAll(sel)];
+
+let token = localStorage.getItem('fieldy-hook-token') || '';
+let page = 0, limit = 50, total = 0, selected = null, lastQuery = {};
+
+function flash(msg) {
+  const el = $('#flash');
+  el.textContent = msg; el.style.display = 'block';
+  clearTimeout(flash._t); flash._t = setTimeout(() => el.style.display = 'none', 2600);
+}
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, {
+    ...opts,
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, ...(opts.headers || {}) },
+  });
+  if (res.status === 401) { setTokenState(false); throw new Error('invalid token'); }
+  if (!res.ok) throw new Error(`${res.status}: ${(await res.json().catch(() => ({}))).error || res.statusText}`);
+  return res;
+}
+
+function setTokenState(ok) {
+  const el = $('#token-state');
+  el.textContent = ok ? 'token ✓' : 'no token';
+  el.classList.toggle('ok', ok);
+}
+
+$('#token-state').onclick = async () => {
+  const t = prompt('API token (sent as Bearer on every request):', token);
+  if (t === null) return;
+  token = t.trim();
+  localStorage.setItem('fieldy-hook-token', token);
+  try { await api('/api/stats'); setTokenState(true); await refreshAll(); }
+  catch (e) { setTokenState(false); flash(e.message); }
+};
+
+function queryFromFilters(over = {}) {
+  return {
+    q: $('#f-q').value.trim() || undefined,
+    from: $('#f-from').value ? `${$('#f-from').value}T00:00:00` : undefined,
+    to: $('#f-to').value ? `${$('#f-to').value}T23:59:59` : undefined,
+    speaker: $('#f-speaker').value.trim() || undefined,
+    type: $('#f-type').value.trim() || undefined,
+    ...over,
+  };
+}
+
+function qs(params) {
+  return Object.entries(params).filter(([, v]) => v !== undefined && v !== '')
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
+}
+
+async function search(newPage = 0) {
+  page = newPage;
+  lastQuery = queryFromFilters({ limit, offset: page * limit });
+  try {
+    const { total: t, events } = await (await api(`/api/events?${qs(lastQuery)}`)).json();
+    total = t;
+    renderResults(events);
+    await refreshStats();
+  } catch (e) { flash(e.message); }
+}
+
+function renderResults(events) {
+  const box = $('#results');
+  box.innerHTML = events.length ? '' : '<div class="placeholder" style="margin-top:40px">No events match</div>';
+  for (const ev of events) {
+    const div = document.createElement('div');
+    div.className = 'event' + (selected === ev.id ? ' selected' : '');
+    div.dataset.id = ev.id;
+    div.innerHTML = `<div class="meta"><span>#${ev.id}</span><span>${ev.received_at?.replace('T', ' ').slice(0, 19) || ''}</span>` +
+      `${ev.speaker ? `<span>👤 ${escapeHtml(ev.speaker)}</span>` : ''}<span>${escapeHtml(ev.event_type || '')}</span></div>` +
+      `<div class="text">${escapeHtml(ev.transcript || '(no transcript extracted — see raw)')}</div>`;
+    div.onclick = () => select(ev.id);
+    box.appendChild(div);
+  }
+  $('#page-info').textContent = total ? `${page * limit + 1}–${Math.min(total, (page + 1) * limit)} of ${total}` : '0 events';
+  $('#btn-prev').disabled = page === 0;
+  $('#btn-next').disabled = (page + 1) * limit >= total;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+async function select(id) {
+  selected = id;
+  $$('.event').forEach((el) => el.classList.toggle('selected', Number(el.dataset.id) === id));
+  $$('#detail-tabs button[data-tab]').forEach((b) => b.classList.remove('active'));
+  $(`#detail-tabs button[data-tab="fields"]`).classList.add('active');
+  await showTab('fields');
+}
+
+async function showTab(tab) {
+  const body = $('#detail-body');
+  if (!selected) { body.innerHTML = '<div class="placeholder">Select an event</div>'; return; }
+  try {
+    if (tab === 'fields') {
+      const { id, raw } = await (await api(`/api/events/${selected}`)).json();
+      const flat = { id, ...normalizeDisplay(raw) };
+      body.innerHTML = `<table class="kv">${Object.entries(flat).map(([k, v]) =>
+        `<tr><td>${escapeHtml(k)}</td><td>${escapeHtml(typeof v === 'object' ? JSON.stringify(v) : (v ?? '—'))}</td></tr>`).join('')}</table>`;
+    } else if (tab === 'raw') {
+      const res = await api(`/api/events/${selected}`);
+      body.innerHTML = `<pre>${escapeHtml(JSON.stringify(await res.json(), null, 2))}</pre>`;
+    } else if (tab === 'transform') {
+      const name = $('#f-transform').value;
+      if (!name) { body.innerHTML = '<div class="placeholder">Pick a transform in the sidebar first</div>'; return; }
+      const { result } = await (await api(`/api/events/${selected}/transform/${encodeURIComponent(name)}`)).json();
+      body.innerHTML = `<pre>${escapeHtml(JSON.stringify(result, null, 2))}</pre>`;
+    }
+  } catch (e) { body.innerHTML = `<div class="placeholder">${escapeHtml(e.message)}</div>`; }
+}
+
+// Pull the searchable columns back out of the raw payload for the fields tab.
+function normalizeDisplay(raw) {
+  const d = raw && typeof raw === 'object' && raw.payload ? raw.payload : (raw || {});
+  const t0 = Array.isArray(d.transcriptions) ? d.transcriptions[0] : undefined;
+  return {
+    transcript: d.transcription ?? d.transcript ?? (t0 && t0.text) ?? null,
+    speaker: d.speaker ?? (t0 && t0.speaker) ?? null,
+    date: d.date ?? d.startTime ?? d.timestamp ?? null,
+    conversation_id: d.conversationId ?? d.conversation_id ?? null,
+    event_type: d.event ?? d.eventType ?? d.type ?? 'unknown',
+    keys: typeof d === 'object' ? Object.keys(d).join(', ') : '(non-object payload)',
+  };
+}
+
+$$('#detail-tabs button[data-tab]').forEach((b) => b.onclick = () => {
+  $$('#detail-tabs button[data-tab]').forEach((x) => x.classList.remove('active'));
+  b.classList.add('active');
+  showTab(b.dataset.tab);
+});
+
+$('#btn-delete').onclick = async () => {
+  if (!selected || !confirm(`Delete event #${selected}?`)) return;
+  await api(`/api/events/${selected}`, { method: 'DELETE' });
+  selected = null; showTab('fields'); search(page); flash('Deleted');
+};
+
+$('#btn-search').onclick = () => search(0);
+$('#f-q').addEventListener('keydown', (e) => e.key === 'Enter' && search(0));
+$('#btn-prev').onclick = () => search(page - 1);
+$('#btn-next').onclick = () => search(page + 1);
+
+// --- stats -------------------------------------------------------------------
+async function refreshStats() {
+  const s = await (await api('/api/stats')).json();
+  const today = new Date().toISOString().slice(0, 10);
+  const todayCount = s.byDay.find((d) => d.day === today)?.count || 0;
+  $('#stats').innerHTML = `<span><b>${s.total}</b> events</span><span><b>${todayCount}</b> today</span><span><b>${s.bySpeaker.length}</b> speakers</span>`;
+}
+
+// --- transforms --------------------------------------------------------------
+async function refreshTransformList() {
+  const { transforms } = await (await api('/api/transforms')).json();
+  for (const sel of [$('#f-transform'), $('#t-pick')]) {
+    const current = sel.value;
+    sel.innerHTML = '<option value="">— transform —</option>' +
+      transforms.map((t) => `<option value="${escapeHtml(t.name)}">${escapeHtml(t.name)}</option>`).join('');
+    if (current) sel.value = current;
+  }
+  return transforms;
+}
+
+$('#modal-transform').addEventListener('click', (e) => e.target.id === 'modal-transform' && closeModal());
+$$('[data-close]').forEach((b) => b.onclick = closeModal);
+function closeModal() { $('#modal-transform').classList.remove('open'); }
+
+$('#btn-transform-edit').onclick = async () => {
+  $('#modal-transform').classList.add('open');
+  await refreshTransformList();
+  loadTransform($('#t-pick').value);
+};
+
+function loadTransform(name) {
+  if (!name) { $('#t-name').value = ''; $('#t-code').value = ''; $('#t-output').style.display = 'none'; return; }
+  api('/api/transforms').then(async ({ transforms }) => {
+    const t = transforms.find((x) => x.name === name);
+    $('#t-name').value = t.name; $('#t-code').value = t.code; $('#t-output').style.display = 'none';
+  });
+}
+
+$('#t-pick').onchange = () => loadTransform($('#t-pick').value);
+$('#btn-t-new').onclick = () => { $('#t-pick').value = ''; $('#t-name').value = ''; $('#t-code').value = '(event, raw) => '; };
+
+$('#btn-t-save').onclick = async () => {
+  try {
+    await api('/api/transforms', { method: 'POST', body: JSON.stringify({ name: $('#t-name').value.trim(), code: $('#t-code').value }) });
+    flash('Transform saved'); await refreshTransformList();
+    $('#f-transform').value = $('#t-name').value.trim(); $('#t-pick').value = $('#t-name').value.trim();
+  } catch (e) { flash(e.message); }
+};
+
+$('#btn-t-delete').onclick = async () => {
+  const name = $('#t-pick').value;
+  if (!name || !confirm(`Delete transform "${name}"?`)) return;
+  await api(`/api/transforms/${encodeURIComponent(name)}`, { method: 'DELETE' });
+  await refreshTransformList(); loadTransform(''); flash('Deleted');
+};
+
+$('#btn-t-preview').onclick = async () => {
+  if (!selected) { flash('Select an event first'); return; }
+  const name = $('#t-name').value.trim();
+  try {
+    const { result } = await (await api(`/api/events/${selected}/transform/${encodeURIComponent(name)}`)).json();
+    const out = $('#t-output'); out.style.display = 'block';
+    out.textContent = JSON.stringify(result, null, 2);
+  } catch (e) { flash(e.message); }
+};
+
+$('#btn-transform-run').onclick = async () => {
+  const name = $('#f-transform').value;
+  if (!name) { flash('Pick a transform first'); return; }
+  const filters = queryFromFilters();
+  try {
+    const { matched, results, failures } = await (await api(`/api/transforms/${encodeURIComponent(name)}/run`, {
+      method: 'POST', body: JSON.stringify(filters),
+    })).json();
+    const blob = new Blob([JSON.stringify(results, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = `transform-${name}.json`; a.click();
+    URL.revokeObjectURL(a.href);
+    flash(`Ran on ${results.length}/${matched} events${failures.length ? `, ${failures.length} failed` : ''}`);
+  } catch (e) { flash(e.message); }
+};
+
+// --- export ------------------------------------------------------------------
+$$('button[id="btn-export"]').forEach((b) => b.onclick = () => {
+  const params = qs(queryFromFilters({ format: b.dataset.fmt, limit: 50000 }));
+  fetch(`/api/export?${params}`, { headers: { Authorization: `Bearer ${token}` } })
+    .then(async (res) => {
+      if (!res.ok) throw new Error(`export failed (${res.status})`);
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `fieldy-events-${new Date().toISOString().replace(/[:.]/g, '-')}.${b.dataset.fmt}`;
+      a.click(); URL.revokeObjectURL(a.href);
+      flash('Exported');
+    })
+    .catch((e) => flash(e.message));
+});
+
+async function refreshAll() {
+  await refreshTransformList();
+  await search(0);
+}
+
+(async function init() {
+  setTokenState(Boolean(token));
+  if (!token) { $('#token-state').click(); return; }
+  try { await api('/api/stats'); setTokenState(true); await refreshAll(); }
+  catch { setTokenState(false); }
+})();
+</script>
+</body>
+</html>

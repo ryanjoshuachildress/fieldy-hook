@@ -1,0 +1,21 @@
+[Unit]
+Description=Fieldy webhook receiver
+After=network.target
+
+[Service]
+Type=simple
+# Adjust User/WorkingDirectory to your server's layout
+User=www-data
+WorkingDirectory=/opt/fieldy-hook
+ExecStart=/usr/bin/node src/server.js
+Restart=on-failure
+RestartSec=5
+# Put AUTH_TOKEN / PORT / DB_PATH in this file instead of a global env:
+EnvironmentFile=/opt/fieldy-hook/.env
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/fieldy-hook/data
+
+[Install]
+WantedBy=multi-user.target

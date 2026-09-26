@@ -1,0 +1,20 @@
+{
+  "name": "fieldy-hook",
+  "version": "1.0.0",
+  "description": "Receive Fieldy webhooks, store them in SQLite, search and transform them",
+  "private": true,
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.2.0",
+    "express": "^4.21.2"
+  },
+  "allowScripts": {
+    "better-sqlite3@12.11.1": true
+  }
+}
